@@ -1,0 +1,10 @@
+{
+  "extends": "@strapi/typescript-utils/tsconfigs/server",
+  "include": ["./src"],
+  "compilerOptions": {
+    "rootDir": "../",
+    "baseUrl": ".",
+    "lib": ["esnext"],   // 👈 перезаписываем lib, чтобы не тянуло dom
+    "types": ["node"]    // 👈 явно говорим, что работаем в Node
+  }
+}

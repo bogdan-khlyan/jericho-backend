@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig",
+  "include": ["./src"],
+  "exclude": ["**/*.test.ts"],
+  "compilerOptions": {
+    "rootDir": "../",
+    "baseUrl": ".",
+    "outDir": "./dist",
+
+    "lib": ["esnext"],        // 👈 убираем "dom"
+    "types": ["node"],        // 👈 только node-типы
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
