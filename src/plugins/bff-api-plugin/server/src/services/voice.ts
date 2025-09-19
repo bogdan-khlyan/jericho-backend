@@ -4,55 +4,146 @@ import type { Core } from '@strapi/strapi'
 import axios from 'axios'
 import fs from 'fs'
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8000/ask_voice'
+const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8000'
 const INSTR_UID = 'api::instruction.instruction'
+const MEM_UID = 'api::assistants-memory.assistants-memory'
+
+// 🔹 утилита очистки ответа
+function cleanAssistantAnswer(raw: string): string {
+  if (!raw) return ''
+  return raw
+    .replace(/Пользователь:.*?\n/gi, '')
+    .replace(/Ассистент:/gi, '')
+    .replace(/Human:/gi, '')
+    .replace(/Assistant:/gi, '')
+    .replace(/===/g, '')
+    .trim()
+}
 
 export default ({ strapi }: { strapi: Core.Strapi }) => ({
-  async askVoice(file: any) {
+  async getInstructions(): Promise<string[]> {
     try {
-      strapi.log.info(`[voice.askVoice] Got file: ${file?.name}, path: ${file?.filepath}, size: ${file?.size}`)
-
-      // --- достаём инструкции ---
       const instructions: any[] = await (strapi as any).documents(INSTR_UID).findMany({
         fields: ['id', 'value'],
         limit: 100,
         status: 'published',
       })
+      strapi.log.info(`[voice.getInstructions] Loaded ${instructions.length} instructions`)
+      return instructions.map((i) => i.value)
+    } catch (err) {
+      strapi.log.error(`[voice.getInstructions] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      return []
+    }
+  },
 
-      const allInstructions = instructions.map((i) => i.value).join('\n')
-      strapi.log.info(`[voice.askVoice] Loaded ${instructions.length} instructions`)
+  async getMemory(limit = 20): Promise<{ role: string; text: string }[]> {
+    try {
+      const entries: any[] = await (strapi as any).documents(MEM_UID).findMany({
+        fields: ['id', 'role', 'text', 'createdAt'],
+        sort: [{ createdAt: 'desc' }],
+        limit,
+        status: 'published',
+      })
+      return (entries || [])
+        .reverse()
+        .map((e) => ({ role: e.role, text: e.text }))
+    } catch (err) {
+      strapi.log.error(`[voice.getMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      return []
+    }
+  },
 
-      const formData = new FormData()
-      formData.append('file', fs.createReadStream(file.filepath), {
+  async saveMemory(role: 'user' | 'assistant', text: string) {
+    try {
+      const created = await (strapi as any).documents(MEM_UID).create({
+        data: { role, text },
+      })
+      await (strapi as any).documents(MEM_UID).publish({ documentId: created.documentId })
+      strapi.log.info(`[voice.saveMemory] Saved ${role}: ${text}`)
+    } catch (err) {
+      strapi.log.error(`[voice.saveMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+    }
+  },
+
+  async askVoice(file: any) {
+    try {
+      // === 1. Speech → Text ===
+      const formDataSTT = new FormData()
+      formDataSTT.append('file', fs.createReadStream(file.filepath), {
         filename: file.name || 'voice.webm',
         contentType: file.mimetype || 'audio/webm',
       })
 
-      // 👇 добавляем инструкции в запрос (можно как отдельное поле)
-      formData.append('instructions', allInstructions)
+      const sttResp = await axios.post(`${PYTHON_API_URL}/speech_to_text`, formDataSTT, {
+        headers: formDataSTT.getHeaders(),
+        validateStatus: () => true,
+      })
 
-      strapi.log.info(`[voice.askVoice] Sending request to ${PYTHON_API_URL}`)
+      if (sttResp.status !== 200 || !sttResp.data?.text) {
+        throw new Error(`Speech-to-text failed: ${sttResp.status}`)
+      }
+      const userText = sttResp.data.text
+      strapi.log.info(`=== STT: ${userText}`)
 
-      const response = await axios.post(PYTHON_API_URL, formData, {
-        headers: formData.getHeaders(),
+      // сохраняем в память
+      await this.saveMemory('user', userText)
+
+      // === 2. Собираем контекст ===
+      const instructions = await this.getInstructions()
+      const memory = await this.getMemory(10)
+
+      const history = memory
+        .map((m) => `${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.text}`)
+        .join('\n')
+
+      const prompt = [
+        '=== Instructions ===',
+        instructions.join('\n'),
+        '=== Dialogue history ===',
+        history,
+        `Пользователь: ${userText}`,
+        'Ассистент:',
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      strapi.log.info('=== Prompt sent to LLaMA ===')
+      strapi.log.info(prompt)
+
+      // === 3. LLaMA ответ ===
+      const llamaResp = await axios.post(`${PYTHON_API_URL}/ask_text`, { text: prompt }, {
+        validateStatus: () => true,
+      })
+
+      if (llamaResp.status !== 200 || !llamaResp.data?.answer) {
+        throw new Error(`LLaMA failed: ${llamaResp.status}`)
+      }
+
+      const rawAnswer = llamaResp.data.answer
+      const assistantAnswer = cleanAssistantAnswer(rawAnswer)
+
+      strapi.log.info(`=== LLaMA raw answer ===\n${rawAnswer}`)
+      strapi.log.info(`=== Clean answer ===\n${assistantAnswer}`)
+
+      // сохраняем в память
+      await this.saveMemory('assistant', assistantAnswer)
+
+      // === 4. Text → Speech ===
+      const formDataTTS = new FormData()
+      formDataTTS.append('text', assistantAnswer)
+
+      const ttsResp = await axios.post(`${PYTHON_API_URL}/text_to_speech`, formDataTTS, {
+        headers: formDataTTS.getHeaders(),
         responseType: 'arraybuffer',
         validateStatus: () => true,
       })
 
-      strapi.log.info(`[voice.askVoice] Response status: ${response.status}`)
-      strapi.log.info(`[voice.askVoice] Response headers: ${JSON.stringify(response.headers, null, 2)}`)
-
-      if (response.status !== 200) {
-        strapi.log.error(`[voice.askVoice] Python API error: ${response.status}`)
-        try {
-          strapi.log.error(response.data.toString())
-        } catch {
-          strapi.log.error(`[voice.askVoice] Could not stringify response.data`)
-        }
-        throw new Error('Python API failed')
+      if (ttsResp.status !== 200) {
+        throw new Error(`Text-to-speech failed: ${ttsResp.status}`)
       }
 
-      return response.data
+      strapi.log.info(`[voice.askVoice] TTS OK, size=${ttsResp.data?.length || 0}`)
+      return ttsResp.data
     } catch (err) {
       strapi.log.error(`[voice.askVoice] Unexpected error: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
       throw err
