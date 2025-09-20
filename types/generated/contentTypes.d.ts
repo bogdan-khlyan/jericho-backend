@@ -373,6 +373,35 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiAssistantValidationAssistantValidation
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'assistant_validations';
+  info: {
+    displayName: 'assistant_validation';
+    pluralName: 'assistant-validations';
+    singularName: 'assistant-validation';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::assistant-validation.assistant-validation'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    rule: Schema.Attribute.Text;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiAssistantsMemoryAssistantsMemory
   extends Struct.CollectionTypeSchema {
   collectionName: 'assistants_memories';
@@ -940,6 +969,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
+      'api::assistant-validation.assistant-validation': ApiAssistantValidationAssistantValidation;
       'api::assistants-memory.assistants-memory': ApiAssistantsMemoryAssistantsMemory;
       'api::instruction.instruction': ApiInstructionInstruction;
       'plugin::content-releases.release': PluginContentReleasesRelease;
