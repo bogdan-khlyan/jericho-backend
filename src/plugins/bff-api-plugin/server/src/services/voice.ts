@@ -11,14 +11,12 @@ const MEM_UID = 'api::assistants-memory.assistants-memory'
 // 🔹 утилита очистки ответа
 function cleanAssistantAnswer(raw: string): string {
   if (!raw) return ''
-  return raw
-    .replace(/Пользователь:.*?\n/gi, '')
-    .replace(/Ассистент:/gi, '')
-    .replace(/Human:/gi, '')
-    .replace(/Assistant:/gi, '')
-    .replace(/===/g, '')
+  const firstAssistant = raw.split(/Ассистент:/i)[1] || raw
+  return firstAssistant
+    .split(/Пользователь:/i)[0] // обрезаем всё после первой вставки "Пользователь:"
     .trim()
 }
+
 
 export default ({ strapi }: { strapi: Core.Strapi }) => ({
   async getInstructions(): Promise<string[]> {
@@ -31,7 +29,9 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
       strapi.log.info(`[voice.getInstructions] Loaded ${instructions.length} instructions`)
       return instructions.map((i) => i.value)
     } catch (err) {
-      strapi.log.error(`[voice.getInstructions] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      strapi.log.error(
+        `[voice.getInstructions] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`
+      )
       return []
     }
   },
@@ -44,11 +44,19 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
         limit,
         status: 'published',
       })
+
+      strapi.log.info(`[voice.getMemory] Loaded ${entries.length} entries`)
+      entries.forEach((e, i) => {
+        strapi.log.info(`[voice.getMemory] #${i + 1}: role=${e.role}, text=${e.text}`)
+      })
+
       return (entries || [])
         .reverse()
         .map((e) => ({ role: e.role, text: e.text }))
     } catch (err) {
-      strapi.log.error(`[voice.getMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      strapi.log.error(
+        `[voice.getMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`
+      )
       return []
     }
   },
@@ -61,7 +69,9 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
       await (strapi as any).documents(MEM_UID).publish({ documentId: created.documentId })
       strapi.log.info(`[voice.saveMemory] Saved ${role}: ${text}`)
     } catch (err) {
-      strapi.log.error(`[voice.saveMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      strapi.log.error(
+        `[voice.saveMemory] ERROR: ${err instanceof Error ? err.stack : JSON.stringify(err)}`
+      )
     }
   },
 
@@ -96,12 +106,14 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
         .map((m) => `${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.text}`)
         .join('\n')
 
+      strapi.log.info('=== Dialogue history built ===')
+      strapi.log.info(history || '(память пуста)')
+
       const prompt = [
         '=== Instructions ===',
         instructions.join('\n'),
         '=== Dialogue history ===',
         history,
-        `Пользователь: ${userText}`,
         'Ассистент:',
       ]
         .filter(Boolean)
@@ -109,6 +121,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
 
       strapi.log.info('=== Prompt sent to LLaMA ===')
       strapi.log.info(prompt)
+
 
       // === 3. LLaMA ответ ===
       const llamaResp = await axios.post(`${PYTHON_API_URL}/ask_text`, { text: prompt }, {
@@ -145,7 +158,9 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
       strapi.log.info(`[voice.askVoice] TTS OK, size=${ttsResp.data?.length || 0}`)
       return ttsResp.data
     } catch (err) {
-      strapi.log.error(`[voice.askVoice] Unexpected error: ${err instanceof Error ? err.stack : JSON.stringify(err)}`)
+      strapi.log.error(
+        `[voice.askVoice] Unexpected error: ${err instanceof Error ? err.stack : JSON.stringify(err)}`
+      )
       throw err
     }
   },
