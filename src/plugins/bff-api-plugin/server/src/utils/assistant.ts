@@ -17,8 +17,9 @@ export function cleanAssistantAnswer(text: string): string {
 // 🔹 сборка промпта
 export function buildPrompt(instructions: string[], history: string, userText: string): string {
   return [
-    '=== Instructions ===',
-    instructions.join('\n'),
+    // '=== Instructions ===',
+    // instructions.join('\n'),
+    // '=== End instructions ===',
     '=== Dialogue history ===',
     history,
     `Пользователь: ${userText}`,

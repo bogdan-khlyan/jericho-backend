@@ -165,8 +165,17 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
     return resp.data.answer
   },
 
-  // ====== Текст → Голос ======
-  async textToSpeech(text: string): Promise<Buffer> {
+// ====== Текст → Ответ от нейронки ======
+  async textAnswer(userText: string): Promise<string> {
+    const assistantText = await this.ask(userText)
+    const validationText = simpleClean(assistantText)
+    strapi.log.info(`[ASSISTANT TEXT] ${validationText}`)
+    await this.saveMemory("assistant", validationText)
+    return validationText
+  },
+
+// ====== Текст → Аудио ======
+  async textToAudio(text: string): Promise<Buffer> {
     const formData = new FormData()
     formData.append("text", text)
 
@@ -181,6 +190,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
     }
     return resp.data
   },
+
 
   async sendTelegramMessage(text: string) {
     try {
@@ -216,10 +226,6 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
 
       // === Локальная проверка на команду ===
       const localCommand = detectLocalCommand(userText)
-      strapi.log.info(localCommand)
-      strapi.log.info(localCommand)
-      strapi.log.info(localCommand)
-      strapi.log.info(localCommand)
       if (localCommand) {
         const commandBody = localCommand
           .replace("[COMMAND]TG_MESSAGE:", "")
@@ -232,19 +238,13 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
         await this.sendTelegramMessage(commandBody)
         await this.saveMemory("assistant", localCommand)
 
-        const audio = await this.textToSpeech("Уже делаю")
-        return audio
+        // тут сразу озвучиваем фиксированный ответ
+        return await this.textToAudio("Уже делаю")
       }
 
-      // === Если команда не найдена → идём обычным путём ===
-      const assistantText = await this.ask(userText)
-      const validationText = simpleClean(assistantText)
-      strapi.log.info(validationText)
-
-      await this.saveMemory("assistant", validationText)
-
-      const audio = await this.textToSpeech(validationText)
-      return audio
+      // === Если не команда — обычный ответ ===
+      const validationText = await this.textAnswer(userText)
+      return await this.textToAudio(validationText)
     } catch (err) {
       strapi.log.error(`[askVoice] Unexpected error: ${err}`)
       throw err
