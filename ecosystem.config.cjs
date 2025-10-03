@@ -7,7 +7,7 @@ module.exports = {
             env: {
                 NODE_ENV: 'production',
                 ENV_PATH: '.env.devserver',
-                PORT: 1338,
+                PORT: 5561,
                 HOST: '0.0.0.0'
             }
         }
