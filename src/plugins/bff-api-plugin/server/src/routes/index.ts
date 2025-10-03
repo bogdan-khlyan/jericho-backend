@@ -1,5 +1,6 @@
 import contentAPIRoutes from './content-api'
 import voiceRoutes from './voice'
+import bot from "./bot";
 
 const routes = {
   'content-api': {
@@ -7,6 +8,7 @@ const routes = {
     routes: [
       ...contentAPIRoutes,
       ...voiceRoutes,
+      ...bot,
     ],
   },
 }
