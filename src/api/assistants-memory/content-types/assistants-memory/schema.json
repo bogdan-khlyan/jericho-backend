@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "assistants_memories",
+  "info": {
+    "singularName": "assistants-memory",
+    "pluralName": "assistants-memories",
+    "displayName": "assistants_memory"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "role": {
+      "type": "string"
+    },
+    "text": {
+      "type": "text"
+    }
+  }
+}
